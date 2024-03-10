@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Document Classification and Extraction</title>
+    <!-- Load montserrat font -->
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:400,700" rel="stylesheet">
+     <!-- Use latest PDF.js build from Github -->
+     <script src="//mozilla.github.io/pdf.js/build/pdf.js"></script>
+  
+  <style>
+        .lds-ring {
+            display: inline-block;
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+
+        .lds-ring div {
+            box-sizing: border-box;
+            display: block;
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            margin: 8px;
+            border: 4px solid #00000040;
+            border-radius: 50%;
+            animation: lds-ring 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+            border-color: #00000040 transparent transparent transparent;
+        }
+
+        .lds-ring div:nth-child(1) {
+            animation-delay: -0.45s;
+        }
+
+        .lds-ring div:nth-child(2) {
+            animation-delay: -0.3s;
+        }
+
+        .lds-ring div:nth-child(3) {
+            animation-delay: -0.15s;
+        }
+
+        @keyframes lds-ring {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        tr {
+            border: 1px solid #00000020;
+        }
+
+        td {
+            border: 1px solid #00000020;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Montserrat', sans-serif;
+            text-align: center;
+            background-color: #f5f5f5;
+            height: 100vh;
+
+            display: flex;
+            flex-direction: column;
+        }
+
+        #image-input {
+            margin: 20px auto;
+            display: block;
+            font-size: 30px;
+            padding: 10px;
+            border: none;
+            background-color: #fff;
+        }
+
+        #canvas {
+            margin: 0 auto;
+            display: block;
+            object-fit: contain;
+            flex: 1;
+            width: 100%;
+            max-height: 600px;
+
+        }
+
+        .base-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+
+            /*height fill remaining space*/
+
+        }
+
+        #predictions {
+            opacity: 0;
+            flex: 1;
+            display: flex;
+            width: 100%;
+            flex-direction: column;
+            width: 100%;
+            align-items: center;
+            font-size: 15px;
+            color: #000;
+            /* create card */
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            margin: 20px;
+
+
+        }
+
+        .prediction-container {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+        }
+
+        .predictions-top {
+            opacity: 0;
+            padding: 10px;
+            flex: 0.1;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Object Detection and Classification</h1>
+    <p>Made by Vishesh Raheja</p>
+    <a href="https://github.com/entropyconquers">
+       Github: @entropyconquers
+    </a>
+    <div>
+        <input type="file" id="image-input" accept="image/*,application/pdf" />
+        <img id="salad" crossorigin="anonymous" style="opacity: 0; position: absolute;">
+    </div>
+    <div class="base-container">
+        <canvas id="canvas"></canvas>
+
+        <div id="predictions">
+            <div class="predictions-top" id="predictionsTop">
+                <h3>Detected documents</h3>
+                <div style="width: 100%; height: 1px; background-color: #00000020; margin: 20px 0;"></div>
+                <div id="loader" class="lds-ring">
+                    <div></div>
+                    <div></div>
+                    <div></div>
+                    <div></div>
+                </div>
+                <div class="predictions-list" id="predictionsList"></div>
+                <p>
+                    <b>NOTE:</b> The model is trained on a very small dataset and is not very accurate. It is just a
+                    proof of concept.
+                </p>
+            <div id="detectedFaces">
+
+            </div>
+            </div>
+            <div class="prediction-container">
+                <div style="padding: 10px;">
+                    <h3>Image object detection and classification pipeline</h3>
+                    <div style="width: 100%; height: 1px; background-color: #00000020; margin: 20px 0;"></div>
+                    <div id="loader1" class="lds-ring">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <div class="classified">
+
+                    </div>
+                </div>
+                <br>
+                <div style="padding: 10px;">
+
+                    <h3>Classification pipeline based on raw text data</h3>
+                    <div style="width: 100%; height: 1px; background-color: #00000020; margin: 20px 0;"></div>
+                    <div id="loader2" class="lds-ring">
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                        <div></div>
+                    </div>
+                    <div class="unclassified">
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+
+
+    </div>
+
+
+    <script src="https://unpkg.com/@tensorflow/tfjs"></script>
+    <script src="https://unpkg.com/@tensorflow/tfjs-automl"></script>
+
+    <script>
+        const inputElement = document.getElementById('image-input');
+        inputElement.addEventListener('change', handleImageInput, false);
+
+        const doc_types = {
+            "aadhar_card": "Aadhar Card",
+            "cheque": "Cheque",
+            "driving_license": "Driving License",
+            "pan_card": "Pan Card",
+            "passport": "Passport",
+            "voter_id": "Voter ID"
+        }
+        async function getBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+        let modelFaces;
+        const detectFaces = async () => {
+            const prediction = await modelFaces.estimateFaces(document.getElementById('salad'));
+            // print the prediction
+            return prediction;
+        };
+
+        async function handleImageInput(event) {
+            // check if the file is a pdf
+            //get filename
+            const filename = event.target.files[0].name;
+            const extension = filename.split('.').pop();
+            let file = event.target.files[0];
+            async function pdfToImge(file){
+                // convert pdf to image using pdf.js
+                // Loaded via <script> tag, create shortcut to access PDF.js exports.
+                var pdfjsLib = window['pdfjs-dist/build/pdf'];
+
+// The workerSrc property shall be specified.
+                pdfjsLib.GlobalWorkerOptions.workerSrc = '//mozilla.github.io/pdf.js/build/pdf.worker.js';
+                //convert file to base64
+                const base64 = await getBase64(file);
+                // Load the PDF file.
+                const loadingTask = pdfjsLib.getDocument(base64);
+            
+                const pdf = await loadingTask.promise;
+                const page = await pdf.getPage(1);
+                const scale = 1.5;
+                const viewport = page.getViewport({ scale: scale, });
+
+                // Prepare canvas using PDF page dimensions
+                const canvas = document.getElementById('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                // Render PDF page into canvas context
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                const renderTask = page.render(renderContext);
+                await renderTask.promise;
+                const dataURL = canvas.toDataURL('image/jpeg');
+                const blob = await fetch(dataURL).then(r => r.blob());
+                file = new File([blob], filename, { type: 'image/jpeg' });
+                return file;
+            }
+            if (extension == 'pdf') {
+                file = await pdfToImge(file);
+            }
+            
+            
+            
+
+            const img = document.getElementById('salad');
+            img.src = URL.createObjectURL(file);
+            img.style.display = 'block';
+            
+            //model is in model folder in the same directory
+            const model = await tf.automl.loadObjectDetection('/static/model/model.json');
+            const options = { score: 0.5, iou: 0.5, topk: 20 };
+            const predictions = await model.detect(img, options);
+
+            // Draw the bounding boxes on the canvas
+            const canvas = document.getElementById('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            // change the color of the bounding box
+            let colors = ['red', 'green', 'blue', 'yellow', 'orange', 'purple', 'pink', 'brown', 'black', 'white'];
+            let currentColor = 0;
+            console.log(predictions)
+            for (const prediction of predictions) {
+                const { box, label, score } = prediction;
+                ctx.strokeStyle = colors[currentColor];
+                currentColor = (currentColor + 1) % colors.length;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(box.left, box.top, box.width, box.height);
+
+                //ctx font size should be proportional to the image size
+                let w = img.width;
+                let h = img.height;
+                let size = 0;
+                if (w > h) {
+                    size = w / 50;
+                } else {
+                    size = h / 50;
+                }
+                ctx.font = size + 'px Arial';
+                ctx.fillStyle = 'black';
+                // draw the text background
+                ctx.fillRect(box.left, box.top, ctx.measureText(doc_types[label]).width + 10, 30);
+                // draw the text
+                ctx.fillStyle = 'white';
+                ctx.fillText(doc_types[label], box.left + 5, box.top + 20);
+            }
+
+            
+
+
+
+
+            const predictionsElement = document.getElementById('predictions');
+            // smooth scroll to the predictions
+            //timeout 2 seconds
+            setTimeout(() => {
+                predictionsElement.scrollIntoView({ behavior: 'smooth' });
+            }, 900);
+
+
+            //precitionsTop
+            let predictionsTop = document.getElementById('predictionsTop');
+            predictionsTop.style.display = 'block';
+            predictionsTop.style.opacity = 1;
+            predictionsElement.style.opacity = 1;
+            let loader1 = document.getElementById('loader1');
+            let loader2 = document.getElementById('loader2');
+            let loader = document.getElementById('loader');
+            loader1.style.display = 'block';
+            loader2.style.display = 'block';
+            loader.style.display = 'block';
+            let classified = document.getElementsByClassName('classified')[0];
+            let unclassified = document.getElementsByClassName('unclassified')[0];
+            classified.innerHTML = '';
+            unclassified.innerHTML = '';
+            let base64 = await getBase64(file);
+            let body = {
+                "image": base64,
+            }
+            boundingBoxes = []
+            for (const prediction of predictions) {
+                const { box, label, score } = prediction;
+                boundingBoxes.push({
+                    "label": label,
+                    "left": box.left,
+                    "top": box.top,
+                    "width": box.width,
+                    "height": box.height
+                })
+            }
+            // add detected documents to predictionsTop
+            //append the detected documents to predictionsTop
+            let predictionsTopDiv = document.getElementById('predictionsList');
+            //remove all the ul with class list-group
+            let uls = document.getElementsByClassName('list-group');
+            for (let i = 0; i < uls.length; i++) {
+                uls[i].remove();
+            }
+            //create ul
+            let ul = document.createElement('ul');
+            ul.className = 'list-group';
+
+            //timeout 5 seconds
+            setTimeout(() => {
+                loader.style.display = 'none';
+                for (const prediction of predictions) {
+                    const { box, label, score } = prediction;
+                    let li = document.createElement('li');
+                    //li should not consume  100% width
+
+                    li.style.width = 'fit-content';
+                    
+                    li.className = 'list-group-item';
+                    li.innerHTML = doc_types[label];
+                    ul.appendChild(li);
+
+                }
+                predictionsTopDiv.appendChild(ul);
+            }, 7000);
+
+
+            body["boundingBoxes"] = boundingBoxes;
+            let response = await fetch('/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(
+                    body
+                )
+            })
+            let data = await response.json();
+            console.log(data);
+
+            // Display the predictions
+            /*
+            voter_id
+            pan_card
+            driving_license
+            cheque
+            passport
+            aadhar_card
+            
+            */
+
+            loader1.style.display = 'none';
+
+            loader2.style.display = 'none';
+
+            //create a table for unclassified
+            let table2 = document.createElement('table');
+            table2.style.width = '100%';
+            table2.style.border = '1px solid black';
+            let tr2 = document.createElement('tr');
+            let th12 = document.createElement('th');
+            th12.innerHTML = 'Document Type';
+            let th22 = document.createElement('th');
+            th22.innerHTML = 'Data';
+            tr2.appendChild(th12);
+            tr2.appendChild(th22);
+            table2.appendChild(tr2);
+            let unclassified_docs = data['unclassified_prediction']['documents'];
+            for (let i = 0; i < unclassified_docs.length; i++) {
+                try {
+                    if (unclassified_docs[i].length == 0) {
+                        continue;
+                    }
+                    // box every document sperately
+                    //Document 
+                    table2.appendChild(document.createElement('br'));
+                    let doc_type = document.createElement('p');
+                    doc_type.innerHTML = 'Document ' + (i + 1);
+                    doc_type.style.fontWeight = 'bold';
+                    table2.appendChild(doc_type);
+                    table2.appendChild(document.createElement('br'));
+                    let unclassified_nested = {}
+
+                    // get one document
+                    let doc = unclassified_docs[i];
+                    // get key value pairs
+                    for (let key in doc) {
+                        // check if value is not nested
+                        if (typeof doc[key] != 'object') {
+                            let tr = document.createElement('tr');
+                            let td1 = document.createElement('td');
+                            td1.innerHTML = key;
+                            let td2 = document.createElement('td');
+
+                            td2.innerHTML = doc[key];
+                            if (key == 'doc_type') {
+                                //make the text bold and red
+                                td2.style.fontWeight = 'bold';
+                                td2.style.color = 'red';
+                                td1.style.fontWeight = 'bold';
+                                td1.style.color = 'red';
+
+                                td1.innerHTML = 'Document Type';
+                            }
+                            tr.appendChild(td1);
+                            tr.appendChild(td2);
+                            table2.appendChild(tr);
+                        }
+                        else {
+                            // value is nested, seperate tab
+                            unclassified_nested[key] = doc[key];
+
+                        }
+
+                    }
+                    // add a line break
+                    let br = document.createElement('br');
+                    table2.appendChild(br);
+
+                    //add heading Miscellaneous data
+                    let misc = document.createElement('h4');
+                    misc.innerHTML = 'Miscellaneous Data (Document ' + (i + 1) + '):';
+                    table2.appendChild(misc);
+                    // print nested data in a pre tag
+                    let nested_text = document.createElement('pre');
+                    //pre text align left
+                    nested_text.style.textAlign = 'left';
+                    //font size 12
+                    nested_text.style.fontSize = '12px';
+
+                    let text = JSON.stringify(unclassified_nested, null, 2);
+                    nested_text.textContent = text;
+
+                    //add nested data
+                    table2.appendChild(nested_text);
+                }
+                catch (err) {
+                    console.log(err);
+                }
+                // add 2 line break
+
+                let br2 = document.createElement('br');
+                table2.appendChild(br2);
+                let br3 = document.createElement('br');
+                table2.appendChild(br3);
+
+
+            }
+            unclassified.innerHTML = '';
+            unclassified.style.maxWidth = '45%';
+            unclassified.appendChild(table2);
+
+            //create a table for classified
+            let table = document.createElement('table');
+            table.style.width = '100%';
+            table.style.border = '1px solid black';
+            let tr = document.createElement('tr');
+            let th1 = document.createElement('th');
+            th1.innerHTML = 'Document Type';
+            let th2 = document.createElement('th');
+            th2.innerHTML = 'Data';
+            tr.appendChild(th1);
+            tr.appendChild(th2);
+            table.appendChild(tr);
+            let classified_docs = data['classified_prediction']['documents'];
+            for (let i = 0; i < classified_docs.length; i++) {
+                try {
+                    if (classified_docs[i].length == 0) {
+                        continue;
+                    }
+                    // box every document sperately
+                    //Document 
+                    table.appendChild(document.createElement('br'));
+                    let doc_type = document.createElement('p');
+                    doc_type.innerHTML = 'Document ' + (i + 1);
+                    doc_type.style.fontWeight = 'bold';
+                    table.appendChild(doc_type);
+                    table.appendChild(document.createElement('br'));
+                    let classified_nested = {}
+
+                    // get one document
+                    let doc = classified_docs[i];
+                    // get key value pairs
+                    for (let key in doc) {
+                        // check if value is not nested
+                        if (typeof doc[key] != 'object') {
+                            let tr = document.createElement('tr');
+                            let td1 = document.createElement('td');
+                            td1.innerHTML = key;
+                            let td2 = document.createElement('td');
+
+                            td2.innerHTML = doc[key];
+                            if (key == 'doc_type') {
+                                //make the text bold and red
+                                td2.style.fontWeight = 'bold';
+                                td2.style.color = 'red';
+                                td1.style.fontWeight = 'bold';
+                                td1.style.color = 'red';
+
+                                td1.innerHTML = 'Document Type';
+                            }
+                            tr.appendChild(td1);
+                            tr.appendChild(td2);
+                            table.appendChild(tr);
+                        }
+                        else {
+                            // value is nested, seperate tab
+                            classified_nested[key] = doc[key];
+
+                        }
+
+                    }
+                    // add a line break
+                    let br = document.createElement('br');
+                    table.appendChild(br);
+
+                    //add heading Miscellaneous data
+                    let misc = document.createElement('h4');
+                    misc.innerHTML = 'Miscellaneous Data (Document ' + (i + 1) + '):';
+                    table.appendChild(misc);
+                    // print nested data in a pre tag
+                    let nested_text = document.createElement('pre');
+                    //pre text align left
+                    nested_text.style.textAlign = 'left';
+                    //font size 12
+                    nested_text.style.fontSize = '12px';
+
+                    let text = JSON.stringify(classified_nested, null, 2);
+                    nested_text.textContent = text;
+
+                    //add nested data
+
+                    table.appendChild(nested_text);
+                }
+                catch (err) {
+                    console.log(err);
+                }
+                // add 2 line break
+
+                let br2 = document.createElement('br');
+                table.appendChild(br2);
+                let br3 = document.createElement('br');
+                table.appendChild(br3);
+
+            }
+            classified.innerHTML = '';
+            //table max width 45%
+            classified.style.maxWidth = '45%';
+            classified.appendChild(table);
+        }
+    </script>
+
+</body>
+
+</html>

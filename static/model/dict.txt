@@ -1,0 +1,7 @@
+background
+voter_id
+pan_card
+driving_license
+cheque
+passport
+aadhar_card

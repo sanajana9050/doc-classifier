@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    
+</head>
+<body>
+    <h1>Home</h1>
+    <!-- form to upload image -->
+    <form >
+        <input type="file" name="image" id="image">
+        <input type="submit" value="Upload Image" id="submit" name="submit">
+    </form>
+    <br>
+
+    <script>
+        // Fetch the data from the flask app
+        /*fetch('/about')
+            .then(response => response.json())
+            .then(data => {
+                console.log(data)
+                // display the data
+                //  create a new div element
+                const newDiv = document.createElement("div");
+                // and give it some content
+                const newContent = document.createTextNode(data['name']);
+                // add the text node to the newly created div
+                newDiv.appendChild(newContent);
+                // add the newly created element and its content into the DOM
+                document.body.appendChild(newDiv);
+
+            });*/
+
+            //convert image to base64 as a string (asynchronous)
+            async function getBase64(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = error => reject(error);
+                });
+            }
+
+
+
+
+            // get the image file
+            const image = document.getElementById('image');
+            // get the submit button
+            const submit = document.getElementById('submit');
+            // add event listener to the submit button
+            submit.addEventListener('click', async function (e) {
+                // prevent the default action of the submit button
+                e.preventDefault();
+                // get the image file
+                const file = image.files[0];
+                // convert the image to base64
+                const base64 = await getBase64(file);
+
+                // send the base64 to the flask app
+                fetch('/ocr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({image: base64})
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log(data)
+                    })
+            })
+
+
+
+
+
+    </script>
+</body>
+</html>
